@@ -13,7 +13,6 @@ def signal_handler(signum, frame):
 
 
 signal.signal(signal.SIGUSR1, signal_handler)
-signal.signal(signal.SIGUSR2, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGCHLD, signal_handler)
 
@@ -36,7 +35,7 @@ def main():
     try:
         expensive_work()
     except OutOfMemoryError:
-        logger.critical(f'catched OutOfMemoryError, closing...', exc_info=True)
+        logger.critical(f'catched OutOfMemoryError, closing...')
     finally:
         shutdown()
 
@@ -45,13 +44,14 @@ if __name__ == '__main__':
     import platform
     if platform.system() != 'Linux':
         raise EnvironmentError
-
+    
+    pid = os.getpid()
     params = {
-        'memory_usage_factor_limit': 0.6,
+        'memory_usage_factor_limit': 0.5,
     }
 
     subprocess = multiprocessing.Process(
-        target=memcg_watcher.main, kwargs=params, daemon=True
+        target=memcg_watcher.main, args=(pid,), kwargs=params, daemon=True
     )
 
     try:

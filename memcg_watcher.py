@@ -2,6 +2,8 @@ from commons import logger
 import linuxfd
 import select
 import platform
+import os
+import signal
 
 
 if platform.system() != 'Linux':
@@ -28,9 +30,9 @@ def get_threshold(factor):
     return int(limit * factor)
 
 
-def main(memory_usage_factor_limit=MEMORY_USAGE_FACTOR_LIMIT):
+def main(pid, memory_usage_factor_limit=MEMORY_USAGE_FACTOR_LIMIT):
     name = 'MemWatcher'
-    logger.info(f'starting {name}')
+    logger.info(f'starting {name} for PID {pid} and memory usage factor limit {memory_usage_factor_limit}')
 
     efd = linuxfd.eventfd(initval=0, nonBlocking=True)
     mfd = open(MEMORY_USAGE_IN_BYTES)
@@ -50,8 +52,9 @@ def main(memory_usage_factor_limit=MEMORY_USAGE_FACTOR_LIMIT):
             for fd, event in events:
                 if fd == efd.fileno() and event & select.EPOLLIN:
                     logger.info('event file received update')
-                    logger.info(f'{name} sent signal to the main process')
+                    logger.info(f'{name} sent signal to the main process with pid {pid}')
                     efd.read()
+                    os.kill(pid, signal.SIGUSR1)
                     isrunning = False
     finally:
         logger.info(f'closing {name}')
