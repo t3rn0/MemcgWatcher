@@ -1,20 +1,24 @@
 import signal
 import os
-import multiprocessing
 import memcg_watcher
+import multiprocessing
 from commons import logger, OutOfMemoryError
-import sys
 
 
 def signal_handler(signum, frame):
     logger.critical(f'got signum {signum}, handling')
-    raise OutOfMemoryError()
+    if signum == 2:
+        raise KeyboardInterrupt
+    raise OutOfMemoryError
 
 
 signal.signal(signal.SIGUSR1, signal_handler)
+signal.signal(signal.SIGUSR2, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGCHLD, signal_handler)
 
 
-def expernsive_function():
+def expensive_work():
     ttt = []
     i = 0
     while True:
@@ -30,23 +34,28 @@ def main():
     p = os.getpid()
     logger.info(f'main function started with pid {p}')
     try:
-        expernsive_function()
-    except OutOfMemoryError as e:
+        expensive_work()
+    except OutOfMemoryError:
         logger.critical(f'catched OutOfMemoryError, closing...', exc_info=True)
     finally:
         shutdown()
 
 
 if __name__ == '__main__':
-    memcg_parameters = {
-        'memory_usage_factor_limit': 0.8,
-    }
-    
-    subprocess = multiprocessing.Process(
-        target=memcg_watcher.main, name='memcg_watcher', 
-        kwargs=memcg_parameters, 
-        daemon=True
-    )
-    subprocess.start()
+    import platform
+    if platform.system() != 'Linux':
+        raise EnvironmentError
 
-    main()
+    params = {
+        'memory_usage_factor_limit': 0.6,
+    }
+
+    subprocess = multiprocessing.Process(
+        target=memcg_watcher.main, kwargs=params, daemon=True
+    )
+
+    try:
+        subprocess.start()
+        main()
+    finally:
+        subprocess.terminate()

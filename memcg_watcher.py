@@ -1,23 +1,17 @@
-import time, os, sys
-import signal
 from commons import logger
+import linuxfd
+import select
+import platform
+
+
+if platform.system() != 'Linux':
+    raise EnvironmentError
 
 
 MEMORY_USAGE_FACTOR_LIMIT = 0.5
-NOTIFY_SIGNAL = signal.SIGUSR1
 MEMORY_LIMIT_IN_BYTES = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
 MEMORY_USAGE_IN_BYTES = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
-
-
-def bytes_to_human(c):
-    if c < 1024: return "%i B" % c
-    S = "KMG"
-    i = 0
-    while i < len(S) - 1:
-        if c < 0.8 * 1024 ** (i + 2): break
-        i += 1
-    f = float(c) / (1024 ** (i + 1))
-    return "%.1f %sB" % (f, S[i])
+CGROUP_EVENT_CONTROL = "/sys/fs/cgroup/memory/cgroup.event_control"
 
 
 def get_limit_usage():
@@ -28,28 +22,38 @@ def get_current_usage():
     return int(open(MEMORY_USAGE_IN_BYTES).read())
 
 
+def get_threshold(factor):
+    # Strange but necessary scaling
+    limit = get_limit_usage() // 2 ** 30
+    return int(limit * factor)
+
+
 def main(memory_usage_factor_limit=MEMORY_USAGE_FACTOR_LIMIT):
+    name = 'MemWatcher'
+    logger.info(f'starting {name}')
 
-    while True:
-        # Strange but necessary scaling.
-        limit = get_limit_usage() // 2 ** 30
-        
-        used = get_current_usage()
-        fact = float(used) / limit
-        p = os.getppid()
-        
-        if p <= 1:
-            # This means that our parent process has died. Stop now.
-            logging.info('closing watcher')
-            sys.exit()
+    efd = linuxfd.eventfd(initval=0, nonBlocking=True)
+    mfd = open(MEMORY_USAGE_IN_BYTES)
+    mfd.fileno()
+    threshold = get_threshold(memory_usage_factor_limit)
 
-        logger.info("ppid: %s, mem limit: %s, current rss: %s, percentage: %s%%" % (
-            os.getppid(), bytes_to_human(limit), bytes_to_human(used), round(100.0*fact)))
+    with open(CGROUP_EVENT_CONTROL, 'w') as f:
+        f.write(f'{efd.fileno()} {mfd.fileno()} {threshold}')
 
-        if fact >= memory_usage_factor_limit:
-            logger.critical("sending signal to proc %i ..." % p)
-            os.kill(p, NOTIFY_SIGNAL)
-        
-        time.sleep(1)
+    epl = select.epoll()
+    epl.register(efd.fileno(), select.EPOLLIN)
 
-    logger.warning('something is wrong')
+    try:
+        isrunning = True
+        while isrunning:
+            events = epl.poll(-1)
+            for fd, event in events:
+                if fd == efd.fileno() and event & select.EPOLLIN:
+                    logger.info('event file received update')
+                    logger.info(f'{name} sent signal to the main process')
+                    efd.read()
+                    isrunning = False
+    finally:
+        logger.info(f'closing {name}')
+        epl.unregister(efd.fileno())
+        epl.close()
