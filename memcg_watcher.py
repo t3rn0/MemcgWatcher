@@ -5,8 +5,8 @@ from commons import logger
 
 MEMORY_USAGE_FACTOR_LIMIT = 0.5
 NOTIFY_SIGNAL = signal.SIGUSR1
-MEMORY_LIMIT_IN_BYTES = "/sys/fs/cgroup/memory/user.slice/memory.limit_in_bytes"
-MEMORY_USAGE_IN_BYTES = "/sys/fs/cgroup/memory/user.slice/memory.usage_in_bytes"
+MEMORY_LIMIT_IN_BYTES = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
+MEMORY_USAGE_IN_BYTES = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 
 
 def bytes_to_human(c):
